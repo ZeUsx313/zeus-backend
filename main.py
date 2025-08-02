@@ -1,23 +1,14 @@
-# =================================================
-# هذا هو الكود الذي سنضعه في ملف main.py
-# =================================================
-
 from flask import Flask, request, jsonify
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+from rapidfuzz import process, fuzz
 import os
-import re
+import re # سنحتفظ بمكتبة re لتقسيم النص
 
-# --- 1. تهيئة التطبيق ونموذج الذكاء الاصطناعي ---
 app = Flask(__name__)
 
-# تحميل النموذج (سيتم تحميله مرة واحدة عند بدء تشغيل الخادم)
-print("جاري تحميل نموذج المتجهات...")
-model = SentenceTransformer('distiluse-base-multilingual-cased-v1')
-print("تم تحميل النموذج.")
+# لا يوجد تحميل لنماذج ضخمة!
 
-# --- 2. قاعدة المعرفة ---
+# --- قاعدة المعرفة ---
+# لقد نسخت لك النص الكامل من الكود الذي أرسلته
 knowledge_base_text = """
 بالتأكيد، سأقوم بإنشاء دليل مستخدم شامل ومفصل لتطبيق “شات زيوس”. هذا الدليل سيغطي كل جانب من جوانب الموقع، بدءًا من الفكرة الأساسية وصولاً إلى شرح كل زر ووظيفة، مع قسم للأسئلة والأجوبة لتوضيح أي استفسارات محتملة.
 
@@ -214,8 +205,7 @@ knowledge_base_text = """
         •       التحكم في الإبداع: إذا كنت تريد إجابة واقعية ومحددة، قلل درجة الحرارة إلى `0.2`. إذا كنت تريد أفكارًا جديدة، ارفعها إلى `0.9`.
         •       مفتاح `Shift + Enter`: أثناء كتابة رسالة، استخدم `Shift + Enter` لإضافة سطر جديد دون إرسال الرسالة.
 """
-
-# === دالة تقسيم النص المحسنة ===
+# سنستخدم دالة التقسيم المحسنة التي كانت في الكود القديم
 def split_into_semantic_chunks(text):
     raw_chunks = re.split(r'(?=\n[1-9]\.\s|\n\s{4,8}•\s|\n\s{8,12}◦\s)', text)
     chunks = []
@@ -232,34 +222,30 @@ def split_into_semantic_chunks(text):
     return chunks
 
 chunks = split_into_semantic_chunks(knowledge_base_text)
+print("الخادم جاهز الآن مع قاعدة المعرفة.")
 
-# تحويل قاعدة المعرفة إلى متجهات (يتم مرة واحدة عند بدء التشغيل)
-print("جاري تحويل قاعدة المعرفة إلى متجهات...")
-knowledge_vectors = model.encode(chunks)
-print("تم التحويل. الخادم جاهز الآن.")
-
-# --- 3. دالة البحث ---
+# --- دالة البحث باستخدام RapidFuzz ---
 def find_relevant_knowledge(user_question, top_k=3):
-    question_vector = model.encode([user_question])
-    similarities = cosine_similarity(question_vector, knowledge_vectors)[0]
-    top_indices = np.argsort(similarities)[-top_k:][::-1]
-    relevant_context = "\n".join([chunks[i] for i in top_indices])
+    results = process.extract(user_question, chunks, scorer=fuzz.WRatio, limit=top_k)
+    relevant_context = "\n".join([result[0] for result in results])
     return relevant_context
 
-# --- 4. نقطة النهاية (Endpoint) التي سيتحدث معها تطبيقك ---
+# --- نقطة النهاية (Endpoint) ---
 @app.route('/find_context', methods=['POST'])
 def find_context_endpoint():
     data = request.get_json()
     if not data or 'question' not in data:
         return jsonify({'error': 'الرجاء إرسال سؤال'}), 400
-
+    
     user_question = data['question']
     context = find_relevant_knowledge(user_question)
-
+    
     return jsonify({'context': context})
 
-# --- 5. تشغيل الخادم ---
-# (هذا الجزء لتشغيل الخادم محليًا، Render سيتعامل معه بطريقته الخاصة)
+# --- نقطة نهاية للتحقق ---
+@app.route('/')
+def index():
+    return "Zeus Backend (RapidFuzz edition) is running!"
+
 if __name__ == '__main__':
-    # Render يستخدم خادم ويب مثل Gunicorn، لذلك لن يتم استدعاء هذا السطر هناك
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8081)))
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
